@@ -246,13 +246,22 @@ function deStat(d) {
   });
   return { done: done, st: st };
 }
+var SHUF = window.DAO_CAU !== false;   /* dat window.DAO_CAU = false de tat tinh nang dao cau/dap an */
+function idOrder(n) { var r = []; for (var i = 0; i < n; i++) r.push(i); return r; }
+function shuffled(n) {
+  var r = idOrder(n), i, j, t;
+  if (!SHUF) return r;
+  for (i = n - 1; i > 0; i--) { j = Math.floor(Math.random() * (i + 1)); t = r[i]; r[i] = r[j]; r[j] = t; }
+  return r;
+}
 function blankHTML(s) { return esc(s).replace(/___/g, '<span class="bk"></span>'); }
 
-function itemHTML(a, it, k) {
-  var no = a.start + k, un = '<span class="un">Unit ' + it.u + '</span>', h = '';
+function itemHTML(a, it, k, pos) {
+  var no = a.start + pos, un = '<span class="un">Unit ' + it.u + '</span>', h = '';
   if (a.type === 'choice') {
+    var ord = a._opt[k] = it.fix ? idOrder(it.o.length) : shuffled(it.o.length);   /* data-o giu chi so goc, chu A-D theo vi tri hien thi */
     h = '<li class="q" data-q="' + k + '"><span class="no">' + no + '</span><div class="qb"><p class="qs">' + blankHTML(it.s) + '</p><div class="opts">' +
-      it.o.map(function (o, j) { return '<button type="button" class="opt" data-o="' + j + '"><b>' + 'ABCD'.charAt(j) + '</b><span>' + o + '</span></button>'; }).join('') +
+      ord.map(function (j, p) { return '<button type="button" class="opt" data-o="' + j + '"><b>' + 'ABCD'.charAt(p) + '</b><span>' + it.o[j] + '</span></button>'; }).join('') +
       '</div></div>' + un + '</li>';
   } else if (a.type === 'gap') {
     var parts = esc(it.s).split('___'), inp = '<input class="gp" type="text" data-q="' + k + '" id="i-' + a.id + '-' + k + '" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Câu ' + no + '">';
@@ -269,18 +278,23 @@ function passHTML(a) {
   a.items.forEach(function (it, k) {
     var no = a.start + k, ctl;
     if (a.type === 'pgap') ctl = '<span class="pb"><i>' + no + '</i><input class="gp" type="text" data-q="' + k + '" id="i-' + a.id + '-' + k + '" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Chỗ trống ' + no + '"></span>';
-    else ctl = '<span class="pb"><i>' + no + '</i><select class="sl" data-q="' + k + '" id="i-' + a.id + '-' + k + '" aria-label="Chỗ trống ' + no + '"><option value="">Chọn</option>' +
-      it.o.map(function (o, j) { return '<option value="' + j + '">' + 'ABCD'.charAt(j) + '. ' + esc(o) + '</option>'; }).join('') + '</select></span>';
+    else {
+      var ord = a._opt[k] = it.fix ? idOrder(it.o.length) : shuffled(it.o.length);
+      ctl = '<span class="pb"><i>' + no + '</i><select class="sl" data-q="' + k + '" id="i-' + a.id + '-' + k + '" aria-label="Chỗ trống ' + no + '"><option value="">Chọn</option>' +
+        ord.map(function (j, p) { return '<option value="' + j + '">' + 'ABCD'.charAt(p) + '. ' + esc(it.o[j]) + '</option>'; }).join('') + '</select></span>';
+    }
     t = t.replace('{' + (k + 1) + '}', ctl);
   });
   return '<div class="pass">' + (a.ptitle ? '<h4>' + esc(a.ptitle) + '</h4>' : '') + '<p>' + t + '</p></div>' +
     '<p class="unrow">' + a.items.map(function (it, k) { return '<span class="un">' + (a.start + k) + ': Unit ' + it.u + '</span>'; }).join('') + '</p>';
 }
 function actHTML(a) {
+  a._opt = {};
+  a._ord = a.passage ? idOrder(a.items.length) : shuffled(a.items.length);   /* phan doan van giu thu tu cau vi cho trong nam trong bai doc */
   var h = '<section class="act" data-act="' + a.id + '"><div class="ah"><div><h3>' + esc(a.title) + '</h3><p class="instr">' + esc(a.instr) + '</p></div><div class="stars" aria-label="Sao">' + stars(a.id) + '</div></div>';
-  if (a.box) h += '<ul class="box" aria-label="Khung từ">' + a.box.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
+  if (a.box) h += '<ul class="box" aria-label="Khung từ">' + shuffled(a.box.length).map(function (i) { return '<li>' + esc(a.box[i]) + '</li>'; }).join('') + '</ul>';
   if (a.passage) h += passHTML(a);
-  else h += '<ol class="ql">' + a.items.map(function (it, k) { return itemHTML(a, it, k); }).join('') + '</ol>';
+  else h += '<ol class="ql">' + a._ord.map(function (k, pos) { return itemHTML(a, a.items[k], k, pos); }).join('') + '</ol>';
   h += '<p class="rule">Em làm hết các câu rồi bấm Kiểm tra. Câu sai sẽ hiện đáp án đúng. Muốn làm lại, em phải làm lại cả bài từ đầu.</p>';
   h += '<div class="fb" hidden></div><div class="bt"><button type="button" class="btn pri" data-do="check">Kiểm tra</button><button type="button" class="btn" data-do="reset">Làm lại cả bài</button></div></section>';
   return h;
@@ -342,7 +356,7 @@ function lockWrong(a, sec, k) {
     el.classList.add('bad');
     el.querySelectorAll('.opt').forEach(function (b) { if (+b.getAttribute('data-o') === it.a) b.classList.add('key'); b.disabled = true; });
   } else if (a.type === 'pchoice') {
-    el.classList.add('bad'); el.disabled = true; insAns(el, 'ABCD'.charAt(it.a) + '. ' + it.o[it.a]);
+    var op = el.querySelector('option[value="' + it.a + '"]'); el.classList.add('bad'); el.disabled = true; insAns(el, op ? op.textContent : String(it.o[it.a]));
   } else {
     el.classList.add('bad'); if (el.tagName === 'SELECT') el.disabled = true; else el.readOnly = true; insAns(el, it.a[0]);
   }
@@ -373,7 +387,8 @@ function check(a, sec) {
     return;
   }
   var blank = [];
-  for (k = 0; k < n; k++) if (evalItem(a, sec, k) === null) blank.push(a.start + k);
+  for (k = 0; k < n; k++) if (evalItem(a, sec, k) === null) blank.push(a.start + a._ord.indexOf(k));
+  blank.sort(function (x, y) { return x - y; });
   if (blank.length) {
     fb.hidden = false; fb.className = 'fb stop';
     fb.innerHTML = '<p><b>Em chưa làm xong.</b> Còn ' + blank.length + ' câu chưa trả lời (câu ' + blank.join(', ') + '). Em làm hết rồi mới bấm Kiểm tra.</p>';
